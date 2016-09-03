@@ -123,10 +123,10 @@ if [ "$DISK" -eq 1 ]; then
         # ahci
 #ARGS+=" -drive file=blk.bin,if=none,id=mydisk -device ich9-ahci,id=ahci -device ide-drive,drive=mydisk,bus=ahci.0"
         # virtio
-        ARGS+=" -drive file=blk.bin,if=virtio,id=mydisk"
+        ARGS+=" -drive file=blk.bin,format=raw,if=virtio,id=mydisk"
     else
         # virtio based block device, pci
-        ARGS+=" -drive file=blk.bin,if=virtio,id=mydisk"
+        ARGS+=" -drive file=blk.bin,format=raw,if=virtio,id=mydisk"
     fi
 fi
 

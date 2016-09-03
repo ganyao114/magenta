@@ -1,28 +1,9 @@
-/*
- * Copyright (c) 2014 Travis Geiselbrecht
- *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files
- * (the "Software"), to deal in the Software without restriction,
- * including without limitation the rights to use, copy, modify, merge,
- * publish, distribute, sublicense, and/or sell copies of the Software,
- * and to permit persons to whom the Software is furnished to do so,
- * subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- */
+// Copyright 2016 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 #pragma once
 
-#include <compiler.h>
+#include <magenta/compiler.h>
 #include <stdint.h>
 
 struct virtio_mmio_config {
@@ -53,7 +34,7 @@ struct virtio_mmio_config {
     /* 0x100 */ uint32_t config[0];
 };
 
-STATIC_ASSERT(sizeof(struct virtio_mmio_config) == 0x100);
+static_assert(sizeof(struct virtio_mmio_config) == 0x100);
 
 #define VIRTIO_MMIO_MAGIC 0x74726976 // 'virt'
 

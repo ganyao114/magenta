@@ -17,8 +17,11 @@
 #include <string.h>
 
 #include "device.h"
+#include "trace.h"
 
 #include "block/block.h"
+
+#define LOCAL_TRACE 1
 
 extern "C" ssize_t virtio_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
     return 0;
@@ -37,58 +40,51 @@ static mx_protocol_device_t virtio_device_proto = {
 
 // implement driver object:
 
-extern "C" mx_status_t virtio_init(mx_driver_t* driver) {
-    printf("virtio_init: driver %p\n", driver);
-#if 0
-    mx_device_t* dev;
-    if (device_create(&dev, driver, "virtio", &virtio_device_proto) == NO_ERROR) {
-        if (device_add(dev, NULL) < 0) {
-            free(dev);
-        }
-    }
-#endif
-    return NO_ERROR;
-}
-
 extern "C" mx_status_t virtio_bind(mx_driver_t* driver, mx_device_t* device) {
-    printf("virtio_bind: driver %p, device %p\n", driver, device);
+    LTRACEF("driver %p, device %p\n", driver, device);
 
     /* grab the pci device and configuration */
     pci_protocol_t* pci;
     if (device_get_protocol(device, MX_PROTOCOL_PCI, (void**)&pci)) {
-        printf("no pci protocol\n");
+        TRACEF("no pci protocol\n");
         return -1;
     }
 
     const pci_config_t *config;
     mx_handle_t config_handle = pci->get_config(device, &config);
     if (config_handle < 0) {
-        printf("failed to grab config handle\n");
+        TRACEF("failed to grab config handle\n");
         return -1;
     }
 
-    printf("pci %p\n", pci);
-    printf("0x%x:0x%x\n", config->vendor_id, config->device_id);
+    LTRACEF("pci %p\n", pci);
+    LTRACEF("0x%x:0x%x\n", config->vendor_id, config->device_id);
 
     mxtl::unique_ptr<virtio::Device> vd = nullptr;
     AllocChecker ac;
     switch (config->device_id) {
         case 0x1001:
-            printf("found block device\n");
-            vd.reset(new (&ac) virtio::BlockDevice());
-            if (!ac.check())
-                return ERR_NO_MEMORY;
+            LTRACEF("found block device\n");
+            vd.reset(new virtio::BlockDevice(driver, device));
             break;
         default:
             printf("unhandled device id, how did this happen?\n");
             return -1;
     }
 
-    auto status = vd->Bind(driver, device, pci, config_handle, config);
+    LTRACEF("calling Bind on driver\n");
+    auto status = vd->Bind(pci, config_handle, config);
     if (status < 0)
         return status;
 
-    return -1;
+    status = vd->Init();
+    if (status < 0)
+        return status;
+
+    // if we're here, we're successful so drop the unique ptr ref to the object and let it live on
+    vd.release();
+
+    LTRACE_EXIT;
 
     return NO_ERROR;
 }

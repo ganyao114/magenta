@@ -4,56 +4,213 @@
 
 #include "device.h"
 
-#include "trace.h"
-
+#include <assert.h>
+#include <limits.h>
 #include <stdio.h>
+
+#include <hw/inout.h>
+
+#include "trace.h"
+#include "virtio_priv.h"
+
+#define LOCAL_TRACE 1
 
 namespace virtio {
 
-Device::Device() {
+static mx_status_t virtio_device_release(mx_device_t* dev) {
+    LTRACEF("mx_device_t %p\n", dev);
+
+    Device *d = Device::MXDeviceToObj(dev);
+
+    LTRACEF("virtio::Device %p\n", d);
+
+    assert(0);
+
+    return NO_ERROR;
+}
+
+Device::Device(mx_driver_t *driver, mx_device_t *bus_device)
+    : driver_(driver), bus_device_(bus_device) {
+    LTRACE_ENTRY;
+
+    // set up some common device ops
+    device_ops_.release = &virtio_device_release;
 }
 
 Device::~Device() {
     if (pci_config_handle_)
         mx_handle_close(pci_config_handle_);
+
+    LTRACE_ENTRY;
+
     // TODO: close pci protocol and other handles
+
+    if (irq_handle_ > 0)
+        mx_handle_close(irq_handle_);
+    if (bar0_mmio_handle_ > 0)
+        mx_handle_close(bar0_mmio_handle_);
 }
 
-mx_status_t Device::Bind(mx_driver_t *driver, mx_device_t *device, pci_protocol_t *pci,
+mx_status_t Device::Bind(pci_protocol_t *pci,
         mx_handle_t pci_config_handle, const pci_config_t *pci_config) {
-    TRACE_ENTRY;
+    LTRACE_ENTRY;
 
     // save off handles to things
-    driver_ = driver;
-    device_ = device;
     pci_ = pci;
     pci_config_handle_ = pci_config_handle;
     pci_config_ = pci_config;
 
+    // TODO: detect if we're transitional or not
+
     // claim the pci device
     mx_status_t r;
-    r = pci->claim_device(device);
+    r = pci->claim_device(bus_device_);
     if (r < 0)
         return r;
 
     // try to set up our IRQ mode
-    if (pci->set_irq_mode(device, MX_PCIE_IRQ_MODE_MSI, 1)) {
-        if (pci->set_irq_mode(device, MX_PCIE_IRQ_MODE_LEGACY, 1)) {
+    if (pci->set_irq_mode(bus_device_, MX_PCIE_IRQ_MODE_MSI, 1)) {
+        if (pci->set_irq_mode(bus_device_, MX_PCIE_IRQ_MODE_LEGACY, 1)) {
             TRACEF("failed to set irq mode\n");
             return -1;
         } else {
             TRACEF("using legacy irq mode\n");
         }
     }
-    mx_handle_t irqh = pci->map_interrupt(device, 0);
-    if (irqh < 0) {
+    irq_handle_ = pci->map_interrupt(bus_device_, 0);
+    if (irq_handle_ < 0) {
         TRACEF("failed to map irq\n");
         return -1;
     }
 
-    TRACE_EXIT;
+    LTRACEF("irq handle %u\n", irq_handle_);
+
+    // look at BAR0, which should be a PIO memory window
+    bar0_pio_base_ = pci_config->base_addresses[0];
+    LTRACEF("BAR0 address %#x\n", bar0_pio_base_);
+    if ((bar0_pio_base_ & 0x1) == 0) {
+        TRACEF("bar 0 does not appear to be PIO (address %#x, aborting\n", bar0_pio_base_);
+        return -1;
+    }
+
+    bar0_pio_base_ &= ~1;
+    if (bar0_pio_base_ > 0xffff) {
+        bar0_pio_base_ = 0;
+
+        // this may be a PIO mapped as mmio (non x86 host)
+        // map in the mmio space
+        // XXX this seems to be broken right now
+        uint64_t sz;
+        bar0_mmio_handle_ = pci->map_mmio(bus_device_, 0, MX_CACHE_POLICY_UNCACHED_DEVICE, (void **)&bar0_mmio_base_, &sz);
+        if (bar0_mmio_handle_ != NO_ERROR) {
+            TRACEF("cannot map io %d\n", bar0_mmio_handle_);
+            return bar0_mmio_handle_;
+        }
+
+        LTRACEF("bar0_mmio_base_ %p, sz %#llx\n", bar0_mmio_base_, sz);
+    } else {
+        // this is probably PIO
+        r = mx_mmap_device_io(get_root_resource(), bar0_pio_base_, bar0_size_);
+        if (r != NO_ERROR) {
+            TRACEF("failed to access PIO range %#x, length %#xw\n", bar0_pio_base_, bar0_size_);
+            return r;
+        }
+    }
+
+    // enable bus mastering
+    if ((r = pci->enable_bus_master(bus_device_, true)) < 0) {
+        TRACEF("cannot enable bus master %d\n", r);
+        return -1;
+    }
+
+    LTRACE_EXIT;
 
     return NO_ERROR;
 }
+
+uint8_t Device::ReadConfigBar(uint16_t offset)
+{
+    if (bar0_pio_base_) {
+        uint16_t port = (bar0_pio_base_ + offset) & 0xffff;
+        //LTRACEF("port %#x\n", port);
+        return inp(port);
+    } else {
+        // XXX implement
+        assert(0);
+        return 0;
+    }
+}
+
+void Device::WriteConfigBar(uint16_t offset, uint8_t val)
+{
+    if (bar0_pio_base_) {
+        uint16_t port = (bar0_pio_base_ + offset) & 0xffff;
+        //LTRACEF("port %#x\n", port);
+        outp(port, val);
+    } else {
+        // XXX implement
+        assert(0);
+    }
+}
+
+mx_status_t Device::CopyDeviceConfig(void *_buf, size_t len)
+{
+    // XXX handle MSI vs noMSI
+    size_t offset = VIRTIO_PCI_CONFIG_OFFSET_NOMSI;
+
+    uint8_t *buf = (uint8_t *)_buf;
+    for (size_t i = 0; i < len; i++) {
+        if (bar0_pio_base_) {
+            buf[i] = ReadConfigBar((offset + i) & 0xffff);
+        } else {
+            // XXX implement
+            assert(0);
+        }
+    }
+
+    return NO_ERROR;
+}
+
+void Device::SetRing(uint16_t index, uint16_t count, mx_paddr_t pa)
+{
+    if (bar0_pio_base_) {
+        outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_SELECT) & 0xffff, index);
+        outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_SIZE) & 0xffff, count);
+        outpd((bar0_pio_base_ + VIRTIO_PCI_QUEUE_PFN) & 0xffff, (uint32_t)(pa / PAGE_SIZE));
+    } else {
+        // XXX implement
+        assert(0);
+    }
+}
+
+void Device::RingKick(uint16_t ring_index)
+{
+    if (bar0_pio_base_) {
+        outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_NOTIFY) & 0xffff, ring_index);
+    } else {
+        // XXX implement
+        assert(0);
+    }
+}
+
+void Device::Reset()
+{
+    WriteConfigBar(VIRTIO_PCI_DEVICE_STATUS, 0);
+}
+
+void Device::StatusAcknowledgeDriver()
+{
+    uint8_t val = ReadConfigBar(VIRTIO_PCI_DEVICE_STATUS);
+    val |= VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER;
+    WriteConfigBar(VIRTIO_PCI_DEVICE_STATUS, val);
+}
+
+void Device::StatusDriverOK()
+{
+    uint8_t val = ReadConfigBar(VIRTIO_PCI_DEVICE_STATUS);
+    val |= VIRTIO_STATUS_DRIVER_OK;
+    WriteConfigBar(VIRTIO_PCI_DEVICE_STATUS, val);
+}
+
 
 };

@@ -15,7 +15,6 @@
 // virtio is the /dev/virtio device.
 
 // implemented in virtio.cpp
-extern mx_status_t virtio_init(mx_driver_t* driver);
 extern mx_status_t virtio_bind(mx_driver_t* driver, mx_device_t* device);
 
 static mx_bind_inst_t binding[] = {
@@ -29,7 +28,6 @@ static mx_bind_inst_t binding[] = {
 mx_driver_t _driver_virtio BUILTIN_DRIVER = {
     .name = "virtio",
     .ops = {
-        .init = virtio_init,
         .bind = virtio_bind,
     },
     .binding = binding,

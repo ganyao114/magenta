@@ -159,7 +159,7 @@ static inline void vring_init(struct vring *vr, unsigned int num, void *p,
                          + align-1) & ~(align - 1));
 }
 
-static inline size_t vring_size(unsigned int num, unsigned long align)
+static inline size_t vring_size(size_t num, unsigned long align)
 {
     return ((sizeof(struct vring_desc) * num + sizeof(uint16_t) * (3 + num)
              + align - 1) & ~(align - 1))

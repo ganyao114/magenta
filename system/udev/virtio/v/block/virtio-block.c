@@ -40,18 +40,6 @@
 
 #define LOCAL_TRACE 1
 
-struct virtio_blk_config {
-    uint64_t capacity;
-    uint32_t size_max;
-    uint32_t seg_max;
-    struct virtio_blk_geometry {
-        uint16_t cylinders;
-        uint8_t heads;
-        uint8_t sectors;
-    } geometry;
-    uint32_t blk_size;
-} __PACKED;
-
 struct virtio_blk_req {
     uint32_t type;
     uint32_t ioprio;
