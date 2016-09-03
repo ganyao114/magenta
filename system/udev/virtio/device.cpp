@@ -13,7 +13,7 @@
 #include "trace.h"
 #include "virtio_priv.h"
 
-#define LOCAL_TRACE 1
+#define LOCAL_TRACE 0
 
 namespace virtio {
 
@@ -128,6 +128,75 @@ mx_status_t Device::Bind(pci_protocol_t *pci,
     return NO_ERROR;
 }
 
+void Device::IrqWorker() {
+    LTRACEF("started\n");
+    for (;;) {
+        mx_status_t r;
+        if ((r = mx_pci_interrupt_wait(irq_handle_)) < 0) {
+            printf("virtio: irq wait failed? %d\n", r);
+            break;
+        }
+
+        uint8_t irq_status = inp((bar0_pio_base_+ VIRTIO_PCI_ISR_STATUS) & 0xffff);
+        LTRACEF("irq_status %u\n", irq_status);
+
+        if (irq_status & 0x1) { /* used ring update */
+            IrqRingUpdate();
+
+#if 0
+            /* cycle through all the active rings */
+            for (uint r = 0; r < MAX_VIRTIO_RINGS; r++) {
+                if ((dev->active_rings_bitmap & (1<<r)) == 0)
+                    continue;
+
+                struct vring *ring = &dev->ring[r];
+                LTRACEF("ring %u: used flags 0x%hhx idx 0x%hhx last_used %u\n",
+                        r, ring->used->flags, ring->used->idx, ring->last_used);
+
+                uint cur_idx = ring->used->idx;
+                for (uint i = ring->last_used; i != (cur_idx & ring->num_mask); i = (i + 1) & ring->num_mask) {
+                    LTRACEF("looking at idx %u\n", i);
+
+                    // process chain
+                    struct vring_used_elem *used_elem = &ring->used->ring[i];
+                    LTRACEF("id %u, len %u\n", used_elem->id, used_elem->len);
+
+                    DEBUG_ASSERT(dev->irq_driver_callback);
+                    ret |= dev->irq_driver_callback(dev, r, used_elem);
+
+                    ring->last_used = (ring->last_used + 1) & ring->num_mask;
+                }
+            }
+#endif
+        }
+        if (irq_status & 0x2) { /* config change */
+            IrqConfigChange();
+        }
+
+#if 0
+        mtx_lock(&edev->lock);
+        if (eth_handle_irq(&edev->eth) & ETH_IRQ_RX) {
+            device_state_set(&edev->dev, DEV_STATE_READABLE);
+        }
+        mtx_unlock(&edev->lock);
+#endif
+    }
+}
+
+int Device::IrqThreadEntry(void* arg) {
+    Device *d = static_cast<Device *>(arg);
+
+    d->IrqWorker();
+
+    return 0;
+}
+
+void Device::StartIrqThread()
+{
+    thrd_create_with_name(&irq_thread_, IrqThreadEntry, this, "virtio-thread");
+    thrd_detach(irq_thread_);
+}
+
 uint8_t Device::ReadConfigBar(uint16_t offset)
 {
     if (bar0_pio_base_) {
@@ -173,6 +242,7 @@ mx_status_t Device::CopyDeviceConfig(void *_buf, size_t len)
 
 void Device::SetRing(uint16_t index, uint16_t count, mx_paddr_t pa)
 {
+    LTRACEF("index %u, count %u, pa %#lx\n", index, count, pa);
     if (bar0_pio_base_) {
         outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_SELECT) & 0xffff, index);
         outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_SIZE) & 0xffff, count);
@@ -185,6 +255,7 @@ void Device::SetRing(uint16_t index, uint16_t count, mx_paddr_t pa)
 
 void Device::RingKick(uint16_t ring_index)
 {
+    LTRACEF("index %u\n", ring_index);
     if (bar0_pio_base_) {
         outpw((bar0_pio_base_ + VIRTIO_PCI_QUEUE_NOTIFY) & 0xffff, ring_index);
     } else {

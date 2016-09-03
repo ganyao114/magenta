@@ -20,12 +20,17 @@ public:
 
     virtual mx_status_t Init();
 
+    virtual void IrqRingUpdate();
+    virtual void IrqConfigChange();
+
     uint64_t GetSize() const { return config_.capacity * config_.blk_size; }
 
 private:
     // DDK driver hooks
     static void virtio_block_iotxn_queue(mx_device_t* dev, iotxn_t* txn);
     static mx_off_t virtio_block_get_size(mx_device_t* dev);
+
+    void QueueReadWriteTxn(iotxn_t *txn);
 
     // the main virtio ring
     Ring vring_ = { this };
@@ -42,6 +47,36 @@ private:
         } geometry;
         uint32_t blk_size;
     } config_ __PACKED = {};
+
+    struct virtio_blk_req {
+        uint32_t type;
+        uint32_t ioprio;
+        uint64_t sector;
+    } __PACKED;
+
+    // a queue of block request/responses
+    static const size_t blk_req_count = 32;
+
+    mx_paddr_t blk_req_pa_ = 0;
+    virtio_blk_req *blk_req_ = nullptr;
+
+    mx_paddr_t blk_res_pa_ = 0;
+    uint8_t *blk_res_ = nullptr;
+
+    uint32_t blk_req_bitmap_ = 0;
+
+    unsigned int alloc_blk_req() {
+        unsigned int i = 31 - __builtin_clz(blk_req_bitmap_);
+        blk_req_bitmap_ |= (1 << i);
+        return i;
+    }
+
+    void free_blk_req(unsigned int i) {
+        blk_req_bitmap_ &= ~(1 << i);
+    }
+
+    // pending iotxns
+    list_node iotxn_list = LIST_INITIAL_VALUE(iotxn_list);
 };
 
 };

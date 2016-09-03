@@ -21,11 +21,11 @@ namespace virtio {
 
 void virtio_dump_desc(const struct vring_desc *desc)
 {
-    printf("vring descriptor %p\n", desc);
-    printf("\taddr  0x%llx\n", desc->addr);
-    printf("\tlen   0x%x\n", desc->len);
-    printf("\tflags 0x%hhx\n", desc->flags);
-    printf("\tnext  0x%hhx\n", desc->next);
+    printf("vring descriptor %p: ", desc);
+    printf(" addr  %#llx", desc->addr);
+    printf(" len   %#8x", desc->len);
+    printf(" flags %#02hhx", desc->flags);
+    printf(" next  %#02hhx\n", desc->next);
 }
 
 Ring::Ring(Device *device) : device_(device) {}
@@ -64,7 +64,7 @@ mx_status_t Ring::Init(uint16_t index, uint16_t count) {
     }
 
     /* register the ring with the device */
-    device_->SetRing(index_, count, ring_pa_ / PAGE_SIZE);
+    device_->SetRing(index_, count, ring_pa_);
 
 #if 0
     /* mark the ring active */

@@ -8,6 +8,7 @@
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <ddk/protocol/pci.h>
+#include <threads.h>
 
 namespace virtio {
 
@@ -22,6 +23,12 @@ public:
     virtual mx_status_t Bind(pci_protocol_t *, mx_handle_t pci_config_handle, const pci_config_t *);
 
     virtual mx_status_t Init() = 0;
+
+    void StartIrqThread();
+
+    // interrupt cases that devices may override
+    virtual void IrqRingUpdate() {}
+    virtual void IrqConfigChange() {}
 
     static Device* MXDeviceToObj(mx_device_t *dev) {
         return reinterpret_cast<Device *>((uintptr_t)dev - offsetof(Device, device_));
@@ -41,6 +48,9 @@ protected:
     void StatusAcknowledgeDriver();
     void StatusDriverOK();
 
+    static int IrqThreadEntry(void* arg);
+    void IrqWorker();
+
     mx_driver_t *driver_ = nullptr;
     mx_device_t *bus_device_ = nullptr;
 
@@ -55,6 +65,9 @@ protected:
     uint32_t bar0_size_ = 0; // for now, must be set in subclass before Bind()
     volatile uint8_t* bar0_mmio_base_ = nullptr;
     mx_handle_t bar0_mmio_handle_ = 0;
+
+    // irq thread object
+    thrd_t irq_thread_ = {};
 
     // embedded device object
     mx_device_t device_ = {};
