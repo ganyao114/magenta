@@ -5,6 +5,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+/**
+ * 寄存器读写操作
+**/
+
 #ifndef __REG_H
 #define __REG_H
 

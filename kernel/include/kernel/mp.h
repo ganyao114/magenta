@@ -4,7 +4,9 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
-
+/**
+ * 多核心支持 
+ **/
 #pragma once
 
 #include <magenta/compiler.h>
@@ -16,12 +18,14 @@
 
 __BEGIN_CDECLS;
 
+// 32 位 bit 记录每个 CORE boolean 状态
 typedef uint32_t mp_cpu_mask_t;
 typedef void (*mp_ipi_task_func_t)(void *context);
 typedef void (*mp_sync_task_t)(void *context);
 
 #define MP_CPU_ALL_BUT_LOCAL (UINT32_MAX)
 #define MP_CPU_ALL (1U<<31)
+//最大 32 核心
 static_assert(SMP_MAX_CPUS <= 31, "");
 
 /* by default, mp_mbx_reschedule does not signal to cpus that are running realtime
@@ -39,9 +43,11 @@ void mp_init(void);
 
 void mp_reschedule(mp_cpu_mask_t target, uint flags);
 void mp_sync_exec(mp_cpu_mask_t target, mp_sync_task_t task, void *context);
+//设置 CPU CORE 活动/在线
 void mp_set_curr_cpu_online(bool online);
 void mp_set_curr_cpu_active(bool active);
 
+//热插拔 CPU CORE 操作
 status_t mp_hotplug_cpu(uint cpu_id);
 status_t mp_unplug_cpu(uint cpu_id);
 
@@ -50,6 +56,7 @@ enum handler_return mp_mbx_reschedule_irq(void);
 /* called from arch code during generic task irq */
 enum handler_return mp_mbx_generic_irq(void);
 
+// 核间中断任务数据结构
 /* represents a pending task for some number of CPUs to execute */
 struct mp_ipi_task {
     struct list_node node;
@@ -58,22 +65,25 @@ struct mp_ipi_task {
     void *context;
 };
 
+// 记录 CPU CORE 状态的数据结构
 /* global mp state to track what the cpus are up to */
 struct mp_state {
     /* cpus that are currently online */
-    volatile mp_cpu_mask_t online_cpus;
+    volatile mp_cpu_mask_t online_cpus; // CORE 是否在线
     /* cpus that are currently schedulable */
-    volatile mp_cpu_mask_t active_cpus;
+    volatile mp_cpu_mask_t active_cpus; // CORE 是否激活
 
     /* only safely accessible with thread lock held */
-    mp_cpu_mask_t idle_cpus;
-    mp_cpu_mask_t realtime_cpus;
+    mp_cpu_mask_t idle_cpus; // 记录空闲的 CORE
+    mp_cpu_mask_t realtime_cpus; // 记录实时的 CORE，猜测为 PIN Thread 准备，即独占核心的线程
 
+    // 自旋锁
     spin_lock_t ipi_task_lock;
     /* list of outstanding tasks for CPUs to execute.  Should only be
      * accessed with the ipi_task_lock held */
     struct list_node ipi_task_list[SMP_MAX_CPUS];
 
+    //CORE 热插拔锁
     /* lock for serializing CPU hotplug/unplug operations */
     mutex_t hotplug_lock;
 };

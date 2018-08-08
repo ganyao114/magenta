@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+//自动锁 CPP 实现
+
 #pragma once
 
 #include <kernel/mutex.h>

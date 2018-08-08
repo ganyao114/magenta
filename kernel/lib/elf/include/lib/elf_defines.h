@@ -5,6 +5,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+/**
+ * elf 文件结构定义
+ **/
+
 #pragma once
 
 #include <inttypes.h>

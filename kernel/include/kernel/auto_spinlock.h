@@ -3,7 +3,7 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
-
+//自动自旋锁
 #pragma once
 
 #include <kernel/spinlock.h>

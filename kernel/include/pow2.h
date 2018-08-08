@@ -5,6 +5,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+//开方 log 等函数实现
+
 #ifndef __POW2_H
 #define __POW2_H
 

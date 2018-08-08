@@ -5,6 +5,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+/**
+ * 自旋锁 
+ * smp 必须，保证多核心同步
+ * https://blog.csdn.net/wh_19910525/article/details/11536279
+**/
+
 #pragma once
 
 #include <magenta/compiler.h>
@@ -12,6 +18,7 @@
 
 __BEGIN_CDECLS
 
+// 不会关中断，保证速度快
 /* interrupts should already be disabled */
 static inline void spin_lock(spin_lock_t *lock)
 {
